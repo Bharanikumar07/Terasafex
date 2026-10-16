@@ -144,6 +144,14 @@ const initialEvents: MissionEvent[] = [
   }
 ];
 
+// Base URLs: support environment variables or relative paths in production / Vercel rewrites, with fallback for local dev
+const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || "";
+const WS_BASE = (import.meta as any).env?.VITE_WS_BASE_URL || (
+  typeof window !== 'undefined'
+    ? `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`
+    : "ws://localhost:8000"
+);
+
 export function App() {
   const [telemetry, setTelemetry] = useState<RobotTelemetry>(initialTelemetry);
   const [events, setEvents] = useState<MissionEvent[]>(initialEvents);
@@ -167,7 +175,10 @@ export function App() {
 
     const connectWebSocket = () => {
       try {
-        const ws = new WebSocket("ws://localhost:8000/ws/telemetry");
+        const wsUrl = WS_BASE.startsWith("ws://") || WS_BASE.startsWith("wss://")
+          ? `${WS_BASE}/ws/telemetry`
+          : `ws://${WS_BASE}/ws/telemetry`;
+        const ws = new WebSocket(wsUrl);
         wsRef.current = ws;
 
         ws.onopen = () => {
@@ -250,14 +261,14 @@ export function App() {
     connectWebSocket();
 
     // Fetch initial health from backend
-    fetch("http://localhost:8000/api/health")
+    fetch(`${API_BASE}/api/health`)
       .then(res => res.json())
       .then(data => setSystemHealth(data))
       .catch(() => {});
 
     // Periodic health poll
     const healthInterval = setInterval(() => {
-      fetch("http://localhost:8000/api/health")
+      fetch(`${API_BASE}/api/health`)
         .then(res => res.json())
         .then(data => setSystemHealth(data))
         .catch(() => setSystemHealth(null));
@@ -294,7 +305,7 @@ export function App() {
     } else {
       // Fallback to REST
       try {
-        const res = await fetch("http://localhost:8000/api/command", {
+        const res = await fetch(`${API_BASE}/api/command`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload)
@@ -312,7 +323,7 @@ export function App() {
     setSafetyLocked(true);
     setLastActionStatus("EMERGENCY STOP TRIGGERED. All motion halted and actuators inhibited.");
     try {
-      await fetch("http://localhost:8000/api/estop", { method: "POST" });
+      await fetch(`${API_BASE}/api/estop`, { method: "POST" });
     } catch {}
   };
 
@@ -321,9 +332,9 @@ export function App() {
     setLastActionStatus(`Injecting simulation scenario: ${scenario}...`);
     try {
       if (endpoint) {
-        await fetch(`http://localhost:8000${endpoint}`, { method: "POST" });
+        await fetch(`${API_BASE}${endpoint}`, { method: "POST" });
       } else {
-        await fetch("http://localhost:8000/api/simulator/scenario", {
+        await fetch(`${API_BASE}/api/simulator/scenario`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ scenario_name: scenario, fault_active: scenario !== "NORMAL" })
@@ -338,7 +349,7 @@ export function App() {
     setActiveScenario("NORMAL");
     setLastActionStatus("Resetting simulator to nominal baseline parameters...");
     try {
-      await fetch("http://localhost:8000/api/simulator/reset", { method: "POST" });
+      await fetch(`${API_BASE}/api/simulator/reset`, { method: "POST" });
     } catch {}
   };
 
@@ -444,11 +455,11 @@ export function App() {
             style={{ fontSize: '11px', padding: '4px 10px' }}
             onClick={async () => {
               if (simActive) {
-                await fetch("http://localhost:8000/api/simulator/pause", { method: "POST" });
+                await fetch(`${API_BASE}/api/simulator/pause`, { method: "POST" });
                 setSimActive(false);
                 setLastActionStatus("Simulation cycle paused.");
               } else {
-                await fetch("http://localhost:8000/api/simulator/resume", { method: "POST" });
+                await fetch(`${API_BASE}/api/simulator/resume`, { method: "POST" });
                 setSimActive(true);
                 setLastActionStatus("Simulation cycle resumed.");
               }
@@ -824,7 +835,7 @@ export function App() {
                   onClick={async () => {
                     setLastActionStatus("Dispatching real sample inference request to backend...");
                     try {
-                      const res = await fetch("http://localhost:8000/api/ai/predict-sample", { method: "POST" });
+                      const res = await fetch(`${API_BASE}/api/ai/predict-sample`, { method: "POST" });
                       const data = await res.json();
                       if (data.detections && data.detections.length > 0) {
                         setTelemetry(prev => ({
